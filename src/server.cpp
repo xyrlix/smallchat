@@ -162,32 +162,37 @@ void ChatServer::stop() {
     
     running_ = false;
     
-    // 关闭所有客户端连接
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    for (auto& [socket_fd, client] : clients_) {
-        close(socket_fd);
-    }
-    clients_.clear();
-    name_to_socket_.clear();
-    
-    // 关闭服务器socket
+    // 关闭服务器socket（这会让 accept 返回错误）
     if (server_fd_ >= 0) {
         close(server_fd_);
         server_fd_ = -1;
     }
     
-    // 等待线程结束
+    // 等待接受连接线程结束（在释放锁之前）
     if (accept_thread_.joinable()) {
         accept_thread_.join();
     }
     
-    std::lock_guard<std::mutex> lock2(threads_mutex_);
-    for (auto& [socket_fd, thread] : client_threads_) {
-        if (thread.joinable()) {
-            thread.join();
+    // 现在关闭所有客户端连接
+    {
+        std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
+        for (auto& [socket_fd, client] : clients_) {
+            close(socket_fd);
         }
+        clients_.clear();
+        name_to_socket_.clear();
     }
-    client_threads_.clear();
+    
+    // 等待客户端处理线程结束
+    {
+        std::lock_guard<std::mutex> lock2(threads_mutex_);
+        for (auto& [socket_fd, thread] : client_threads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        client_threads_.clear();
+    }
 }
 
 bool ChatServer::isRunning() const {
@@ -195,12 +200,12 @@ bool ChatServer::isRunning() const {
 }
 
 size_t ChatServer::getClientCount() const {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     return clients_.size();
 }
 
 std::vector<ClientInfo> ChatServer::getClients() const {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     
     std::vector<ClientInfo> result;
     result.reserve(clients_.size());
@@ -215,14 +220,14 @@ std::vector<ClientInfo> ChatServer::getClients() const {
 void ChatServer::sendSystemMessage(const std::string& message) {
     std::string encoded = ChatProtocol::encodeSystemMessage(message);
     
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     for (const auto& [socket_fd, client] : clients_) {
         sendToSocket(socket_fd, encoded);
     }
 }
 
 void ChatServer::sendToClient(const std::string& client_name, const std::string& message) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     
     auto it = name_to_socket_.find(client_name);
     if (it != name_to_socket_.end()) {
@@ -231,7 +236,7 @@ void ChatServer::sendToClient(const std::string& client_name, const std::string&
 }
 
 void ChatServer::broadcast(const std::string& message) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     for (const auto& [socket_fd, client] : clients_) {
         sendToSocket(socket_fd, message);
     }
@@ -279,8 +284,12 @@ void ChatServer::acceptConnections() {
         client->connect_time = std::chrono::system_clock::now();
         client->is_logged_in = false;
         
+        // 保存客户端信息副本用于回调
+        std::string client_name = client->name;
+        auto client_time = client->connect_time;
+        
         {
-            std::lock_guard<std::mutex> lock(clients_mutex_);
+            std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
             clients_[client_socket] = std::move(client);
         }
         
@@ -296,10 +305,10 @@ void ChatServer::acceptConnections() {
         if (connect_callback_) {
             ClientInfo info;
             info.socket_fd = client_socket;
-            info.name = client->name;
+            info.name = client_name;
             info.ip_address = ip_str;
             info.port = port;
-            info.connect_time = client->connect_time;
+            info.connect_time = client_time;
             info.is_logged_in = false;
             connect_callback_(info);
         }
@@ -375,7 +384,7 @@ void ChatServer::removeClient(int socket_fd) {
     std::string name;
     
     {
-        std::lock_guard<std::mutex> lock(clients_mutex_);
+        std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
         
         auto it = clients_.find(socket_fd);
         if (it != clients_.end()) {
@@ -418,13 +427,18 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
             return;
         }
         
-        // 更新客户端信息
-        std::lock_guard<std::mutex> lock(clients_mutex_);
-        name_to_socket_.erase(client.name);
-        client.name = name;
-        client.is_logged_in = true;
-        name_to_socket_[name] = client_socket;
+        // 更新客户端信息（只做必要的操作）
+        std::string old_name;
+        {
+            std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
+            old_name = client.name;
+            name_to_socket_.erase(client.name);
+            client.name = name;
+            client.is_logged_in = true;
+            name_to_socket_[name] = client_socket;
+        }  // 释放锁
         
+        // I/O 操作在锁外进行
         sendToSocket(client_socket, 
             ChatProtocol::encodeSuccess("Logged in as " + name));
         
@@ -435,7 +449,7 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
         std::vector<std::string> users;
         
         {
-            std::lock_guard<std::mutex> lock(clients_mutex_);
+            std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
             for (const auto& [socket_fd, c] : clients_) {
                 if (c->is_logged_in) {
                     users.push_back(c->name);
@@ -456,8 +470,17 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
             return;
         }
         
-        ClientInfo* target = getClientByName(target_name);
-        if (!target) {
+        // 在锁内查找目标客户端的 socket_fd
+        int target_socket = -1;
+        {
+            std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
+            ClientInfo* target = getClientByNameUnlocked(target_name);
+            if (target) {
+                target_socket = target->socket_fd;
+            }
+        }  // 释放锁
+        
+        if (target_socket == -1) {
             sendToSocket(client_socket, 
                 ChatProtocol::encodeError("User not found: " + target_name));
             return;
@@ -471,7 +494,7 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
         chat_msg.timestamp = std::chrono::system_clock::now();
         
         std::string encoded = ChatProtocol::encode(chat_msg);
-        sendToSocket(target->socket_fd, encoded);
+        sendToSocket(target_socket, encoded);
         sendToSocket(client_socket, encoded);
         
     } else if (cmd == "/help") {
@@ -495,7 +518,7 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
 }
 
 ClientInfo* ChatServer::getClientBySocket(int socket_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
     
     auto it = clients_.find(socket_fd);
     if (it != clients_.end()) {
@@ -506,8 +529,11 @@ ClientInfo* ChatServer::getClientBySocket(int socket_fd) {
 }
 
 ClientInfo* ChatServer::getClientByName(const std::string& name) {
-    std::lock_guard<std::mutex> lock(clients_mutex_);
-    
+    std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
+    return getClientByNameUnlocked(name);
+}
+
+ClientInfo* ChatServer::getClientByNameUnlocked(const std::string& name) {
     auto it = name_to_socket_.find(name);
     if (it != name_to_socket_.end()) {
         auto client_it = clients_.find(it->second);

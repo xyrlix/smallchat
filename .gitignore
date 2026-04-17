@@ -1,0 +1,43 @@
+# 编译相关
+build/
+output/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 可执行文件
+smallchat_server
+smallchat_client
+test_chat
+
+# 调试文件
+*.dSYM/
+*.su
+*.gch
+*.pch
+
+# 依赖文件
+*.d
+
+# 编辑器备份
+*.bak
+*.tmp
+.*.bak

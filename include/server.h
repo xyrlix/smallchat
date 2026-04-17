@@ -152,6 +152,11 @@ private:
     ClientInfo* getClientBySocket(int socket_fd);
     ClientInfo* getClientByName(const std::string& name);
     
+    /**
+     * @brief 获取客户端信息（不获取锁，仅在已持有锁的情况下使用）
+     */
+    ClientInfo* getClientByNameUnlocked(const std::string& name);
+    
     int server_fd_;
     uint16_t port_;
     bool running_;
@@ -159,7 +164,7 @@ private:
     
     std::unordered_map<int, std::unique_ptr<ClientInfo>> clients_;
     std::unordered_map<std::string, int> name_to_socket_;
-    mutable std::mutex clients_mutex_;
+    mutable std::recursive_mutex clients_mutex_;
     
     MessageCallback message_callback_;
     ClientCallback connect_callback_;
@@ -209,7 +214,6 @@ public:
      */
     static std::string encodeSuccess(const std::string& message);
     
-private:
     static const std::string MSG_SEPARATOR;
     static const std::string FIELD_SEPARATOR;
 };

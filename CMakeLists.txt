@@ -39,7 +39,7 @@ target_link_libraries(smallchat_server PRIVATE smallchat_server_lib ${EXTRA_LIBS
 
 # 客户端可执行文件
 add_executable(smallchat_client ${CLIENT_SOURCES})
-target_link_libraries(smallchat_client PRIVATE smallchat_client_lib ${EXTRA_LIBS})
+target_link_libraries(smallchat_client PRIVATE smallchat_client_lib smallchat_server_lib ${EXTRA_LIBS})
 
 # 安装
 install(TARGETS smallchat_server smallchat_client
