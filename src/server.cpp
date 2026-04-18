@@ -46,7 +46,14 @@ bool ChatProtocol::decode(const std::string& data, ChatMessage& message) {
     message.sender = findField(pos);
     message.receiver = findField(pos);
     message.type = static_cast<ChatMessage::Type>(std::stoi(findField(pos)));
-    message.content = findField(pos);
+    
+    // 处理最后一个字段 content，它后面没有 FIELD_SEPARATOR，只有 MSG_SEPARATOR
+    size_t msg_sep_pos = data.find(MSG_SEPARATOR, pos);
+    if (msg_sep_pos != std::string::npos) {
+        message.content = data.substr(pos, msg_sep_pos - pos);
+    } else {
+        message.content = data.substr(pos);
+    }
     
     message.timestamp = std::chrono::system_clock::now();
     

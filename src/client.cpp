@@ -160,70 +160,93 @@ void ChatClient::receiveThread() {
 }
 
 void ChatClient::processMessage(const std::string& data) {
-    // 查找消息分隔符
+    // 处理消息时，我们需要按消息类型来处理
     size_t start = 0;
     size_t end;
     
-    while ((end = data.find(ChatProtocol::MSG_SEPARATOR, start)) != std::string::npos) {
-        std::string message = data.substr(start, end - start);
-        start = end + ChatProtocol::MSG_SEPARATOR.length();
-        
-        // 解析消息类型
-        std::istringstream iss(message);
-        std::string type;
-        iss >> type;
-        
-        if (type == "MSG") {
-            // 普通消息
+    while (start < data.length()) {
+        // 首先检查是否是MSG类型消息（因为它的格式特殊）
+        if (data.substr(start, 3) == "MSG") {
+            // 处理MSG类型消息
+            end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+            if (end == std::string::npos) break;
+            
+            // 提取完整的MSG消息，从start到end
+            std::string msg_data = data.substr(start, end - start);
+            
             ChatMessage chat_msg;
-            if (ChatProtocol::decode(data.substr(start - message.length() - 1, 
-                                                    message.length()), 
-                                      chat_msg)) {
+            if (ChatProtocol::decode(msg_data, chat_msg)) {
                 if (message_callback_) {
                     message_callback_(chat_msg);
                 }
             }
-        } else if (type == "SYS") {
-            // 系统消息
-            std::string content;
-            std::getline(iss, content);
-            if (system_callback_) {
-                system_callback_(content);
-            }
-        } else if (type == "USERS") {
-            // 用户列表
-            size_t count;
-            iss >> count;
             
-            std::vector<std::string> users;
-            std::string user;
-            for (size_t i = 0; i < count && iss >> user; ++i) {
-                users.push_back(user);
-            }
+            start = end + ChatProtocol::MSG_SEPARATOR.length();
+        } else {
+            // 处理其他类型消息
+            end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+            if (end == std::string::npos) break;
             
-            if (userlist_callback_) {
-                userlist_callback_(users);
-            }
-        } else if (type == "ERROR") {
-            // 错误消息
-            std::string error;
-            std::getline(iss, error);
-            if (error_callback_) {
-                error_callback_(error);
-            }
-        } else if (type == "OK") {
-            // 成功消息
-            std::string msg;
-            std::getline(iss, msg);
-            if (system_callback_) {
-                system_callback_("[OK] " + msg);
-            }
-        } else if (type == "WELCOME") {
-            // 欢迎消息
-            std::string welcome;
-            std::getline(iss, welcome);
-            if (system_callback_) {
-                system_callback_(welcome);
+            std::string type = data.substr(start, end - start);
+            start = end + ChatProtocol::MSG_SEPARATOR.length();
+            
+            if (type == "WELCOME") {
+                // 欢迎消息
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                if (system_callback_) {
+                    system_callback_(data.substr(start, end - start));
+                }
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+                
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                if (system_callback_) {
+                    system_callback_(data.substr(start, end - start));
+                }
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+            } else if (type == "OK") {
+                // 成功消息
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                if (system_callback_) {
+                    system_callback_("[OK] " + data.substr(start, end - start));
+                }
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+            } else if (type == "ERROR") {
+                // 错误消息
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                if (error_callback_) {
+                    error_callback_(data.substr(start, end - start));
+                }
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+            } else if (type == "SYS") {
+                // 系统消息
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                if (system_callback_) {
+                    system_callback_(data.substr(start, end - start));
+                }
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+            } else if (type == "USERS") {
+                // 用户列表
+                end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                if (end == std::string::npos) break;
+                size_t count = std::stoul(data.substr(start, end - start));
+                start = end + ChatProtocol::MSG_SEPARATOR.length();
+                
+                std::vector<std::string> users;
+                for (size_t i = 0; i < count; i++) {
+                    end = data.find(ChatProtocol::MSG_SEPARATOR, start);
+                    if (end == std::string::npos) break;
+                    users.push_back(data.substr(start, end - start));
+                    start = end + ChatProtocol::MSG_SEPARATOR.length();
+                }
+                
+                if (userlist_callback_) {
+                    userlist_callback_(users);
+                }
             }
         }
     }
