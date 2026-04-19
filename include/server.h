@@ -1,61 +1,31 @@
 #ifndef SMALLCHAT_SERVER_H
 #define SMALLCHAT_SERVER_H
 
-#include <string>
+#include "common.h"
 #include <memory>
-#include <vector>
 #include <unordered_map>
-#include <functional>
 #include <mutex>
 #include <thread>
+#include <functional>
+
+#ifdef OPENSSL_FOUND
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 namespace smallchat {
 
 /**
- * @brief 客户端信息
+ * @brief WebSocket客户端回调函数类型
  */
-struct ClientInfo {
-    int socket_fd;
-    std::string name;
-    std::string ip_address;
-    uint16_t port;
-    std::chrono::system_clock::time_point connect_time;
-    bool is_logged_in;
-};
-
-/**
- * @brief 聊天消息
- */
-struct ChatMessage {
-    std::string sender;
-    std::string receiver;  // 空表示广播消息
-    std::string content;
-    std::chrono::system_clock::time_point timestamp;
-    
-    enum class Type {
-        TEXT,
-        SYSTEM,
-        PRIVATE,
-        BROADCAST
-    };
-    Type type;
-};
+using WebSocketSendCallback = std::function<void(const std::string& message)>;
+using WebSocketSendToCallback = std::function<void(const std::string& client_name, const std::string& message)>;
 
 /**
  * @brief 聊天服务器
  */
 class ChatServer {
 public:
-    /**
-     * @brief 消息回调函数类型
-     */
-    using MessageCallback = std::function<void(const ChatMessage&)>;
-    
-    /**
-     * @brief 客户端连接回调函数类型
-     */
-    using ClientCallback = std::function<void(const ClientInfo&)>;
-    
     ChatServer();
     ~ChatServer();
     
@@ -95,7 +65,7 @@ public:
     void sendToClient(const std::string& client_name, const std::string& message);
     
     /**
-     * @brief 广播消息给所有客户端
+     * @brief 广播消息给所有客户端（包括TCP和WebSocket）
      */
     void broadcast(const std::string& message);
     
@@ -114,7 +84,92 @@ public:
      */
     void setDisconnectCallback(ClientCallback callback);
     
+    /**
+     * @brief 设置WebSocket广播回调
+     */
+    void setWebSocketBroadcastCallback(WebSocketSendCallback callback);
+    
+    /**
+     * @brief 设置WebSocket定向发送回调
+     */
+    void setWebSocketSendToCallback(WebSocketSendToCallback callback);
+    
+    /**
+     * @brief 添加WebSocket客户端
+     */
+    void addWebSocketClient(const std::string& client_name, void* wsi);
+    
+    /**
+     * @brief 移除WebSocket客户端
+     */
+    void removeWebSocketClient(const std::string& client_name);
+    
+    /**
+     * @brief 检查WebSocket客户端是否存在
+     */
+    bool hasWebSocketClient(const std::string& client_name) const;
+    
+    /**
+     * @brief 获取WebSocket客户端数量
+     */
+    size_t getWebSocketClientCount() const;
+    
+    /**
+     * @brief 获取客户端信息（公共接口）
+     */
+    ClientInfo* getClientByName(const std::string& name);
+    
+    /**
+     * @brief 启用SSL/TLS
+     */
+    bool enableSSL(const std::string& cert_file, const std::string& key_file);
+    
+    /**
+     * @brief 检查是否启用了SSL/TLS
+     */
+    bool isSSLEnabled() const;
+    
+    /**
+     * @brief 加载用户信息
+     */
+    bool loadUsers(const std::string& filename);
+    
+    /**
+     * @brief 保存用户信息
+     */
+    bool saveUsers(const std::string& filename);
+    
+    /**
+     * @brief 加载消息历史
+     */
+    bool loadMessageHistory(const std::string& filename);
+    
+    /**
+     * @brief 保存消息历史
+     */
+    bool saveMessageHistory(const std::string& filename);
+    
+    /**
+     * @brief 添加消息到历史记录
+     */
+    void addMessageToHistory(const ChatMessage& message);
+    
+    /**
+     * @brief 关闭客户端socket
+     */
+    void closeClientSocket(int socket_fd);
+    
 private:
+    /**
+     * @brief 初始化SSL
+     */
+    bool initSSL();
+    
+    /**
+     * @brief 清理SSL
+     */
+    void cleanupSSL();
+    
     /**
      * @brief 接受客户端连接
      */
@@ -147,10 +202,9 @@ private:
                        ClientInfo& client);
     
     /**
-     * @brief 获取客户端信息
+     * @brief 获取客户端信息（内部使用）
      */
     ClientInfo* getClientBySocket(int socket_fd);
-    ClientInfo* getClientByName(const std::string& name);
     
     /**
      * @brief 获取客户端信息（不获取锁，仅在已持有锁的情况下使用）
@@ -172,50 +226,33 @@ private:
     
     std::unordered_map<int, std::thread> client_threads_;
     std::mutex threads_mutex_;
-};
-
-/**
- * @brief 聊天协议
- */
-class ChatProtocol {
-public:
-    /**
-     * @brief 编码消息
-     */
-    static std::string encode(const ChatMessage& message);
     
-    /**
-     * @brief 解码消息
-     */
-    static bool decode(const std::string& data, ChatMessage& message);
+    // 用户存储
+    std::unordered_map<std::string, std::string> users_; // 用户名 -> 加密后的密码
+    std::mutex users_mutex_;
     
-    /**
-     * @brief 编码系统消息
-     */
-    static std::string encodeSystemMessage(const std::string& message);
+    // 聊天室存储
+    std::unordered_map<std::string, ChatRoom> rooms_; // 聊天室名称 -> 聊天室信息
+    std::mutex rooms_mutex_;
     
-    /**
-     * @brief 编码欢迎消息
-     */
-    static std::string encodeWelcome();
+    // 消息历史存储
+    std::vector<ChatMessage> message_history_; // 全局消息历史
+    std::unordered_map<std::string, std::vector<ChatMessage>> room_message_history_; // 聊天室消息历史
+    std::mutex history_mutex_;
+    size_t max_history_size_; // 最大历史消息数量
     
-    /**
-     * @brief 编码用户列表
-     */
-    static std::string encodeUserList(const std::vector<std::string>& users);
+    // WebSocket相关
+    std::unordered_map<std::string, void*> websocket_clients_; // 用户名 -> wsi指针
+    mutable std::mutex websocket_mutex_;
+    WebSocketSendCallback websocket_broadcast_callback_;
+    WebSocketSendToCallback websocket_sendto_callback_;
     
-    /**
-     * @brief 编码错误消息
-     */
-    static std::string encodeError(const std::string& error);
-    
-    /**
-     * @brief 编码成功消息
-     */
-    static std::string encodeSuccess(const std::string& message);
-    
-    static const std::string MSG_SEPARATOR;
-    static const std::string FIELD_SEPARATOR;
+    // SSL相关
+#ifdef OPENSSL_FOUND
+    bool ssl_enabled_;
+    SSL_CTX* ssl_ctx_;
+    std::unordered_map<int, SSL*> client_ssl_;
+#endif
 };
 
 } // namespace smallchat

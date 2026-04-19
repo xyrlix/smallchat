@@ -29,9 +29,12 @@ sleep 1
 # 验证所有进程已关闭
 if pgrep -f "smallchat" > /dev/null 2>&1; then
     echo "⚠ 仍有进程运行，尝试强制杀死..."
-    # 注意：这里使用 -10 (SIGTERM) 而不是 -9，并检查 smallchat_server 或 smallchat_client 特定进程
-    pgrep -f "smallchat_server" | xargs -r kill 2>/dev/null || true
-    pgrep -f "smallchat_client" | xargs -r kill 2>/dev/null || true
+    # 注意：这里使用 -9 (SIGKILL) 强制杀死进程
+    pgrep -f "smallchat_server" | xargs -r kill -9 2>/dev/null || true
+    pgrep -f "smallchat_client" | xargs -r kill -9 2>/dev/null || true
+    pgrep -f "smallchat_web_server" | xargs -r kill -9 2>/dev/null || true
+    # 尝试使用更广泛的模式匹配
+    pgrep -f "smallchat" | xargs -r kill -9 2>/dev/null || true
     sleep 1
 fi
 

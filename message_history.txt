@@ -1,0 +1,41 @@
+MSG|mm||0|q0|owiVr5liD9gALceL
+MSG|mm|qq|1|00|v9xJzVcesfmvEuwg
+MSG|ww||0|qq|btIsDJYlm5ciqvKN
+MSG|ww|mm|1|ooxx|zOJfsZZie8Huxo6H
+MSG|mm|ww|1|fuck|5XNIUMMJRPSBOaRS
+MSG|mm||0|on line|n1rDaxuUFwDMq23I
+MSG|ww||0|ok|WGBmTABUAvEUvmq4
+MSG|qq||0|ro|mnZAOZTw5IzQoErw
+MSG|qq||0|123|EEhkLDdaemRZopbN
+MSG|qq||0|ll|PFbR1JfuJLGmqQMX
+MSG|qq||0|ll|CEfbaMQF3ZAY7NRx
+MSG|qq||0|skj|prPA8uDlYw4TYdpj
+MSG|mm||0|ll|e8afzCiXyhQzNEMj
+MSG|mm|qq|1|222|U7d0SspuASms7sZu
+MSG|Alice||0|Hello Bob!|G092ltrxvo4wVX3c
+MSG|Bob||0|Hi Alice!|shYxhv1kr6WymDY7
+MSG|TestUser||0|Test message|IVWjpnGNggiHPzkm
+MSG|Client3||0|Message 0|xKArVfViOUq7Q88r
+MSG|Client6||0|Message 1|to5CE8nKJ4X6BQze
+MSG|Client17||0|Message 2|uhwJYmvpHi6WDBcH
+MSG|Client15||0|Message 3|HcslP10ZG0sDbLKp
+MSG|Client13||0|Message 4|8H7ycffa5FyWVu8k
+MSG|Client15||0|Message 5|uHqjPF3G1420oHHb
+MSG|Client6||0|Message 6|hHs2wZ9Z7hvtUcNK
+MSG|Client12||0|Message 7|hQIrNi1FTB5DC9qb
+MSG|Client9||0|Message 8|SCRc0TNsKwUunfQo
+MSG|Client1||0|Message 9|Tebynd42kPW0amPj
+MSG|Alice||0|Hello Bob!|pDR1kQbbYFxQyPrU
+MSG|Bob||0|Hi Alice!|1bO81f6cO3D5Caoc
+MSG|TestUser||0|Test message|UNKnh00tlemQl9Ek
+MSG|Client3||0|Message 0|afcq0E0eXvzPGo4H
+MSG|Client6||0|Message 1|NxYIlz5GR4vKb4T8
+MSG|Client17||0|Message 2|f2yDy66Vt1HUNP3g
+MSG|Client15||0|Message 3|Vf0XIIIhlfH064Go
+MSG|Client13||0|Message 4|0blwyI5DsldaYK8Z
+MSG|Client15||0|Message 5|vTiND2qzHew93sXt
+MSG|Client6||0|Message 6|s6TMDPdDKfuvQwUW
+MSG|Client12||0|Message 7|h5sBn6jSaYcrgNoc
+MSG|Client9||0|Message 8|EIEqdlq2Bam5k04X
+MSG|Client1||0|Message 9|A2gq0vFyh4dUn25f
+MSG|qq||0|kk|ncbVOzXRB7HL82IO

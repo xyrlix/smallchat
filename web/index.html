@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SmallChat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #login-panel { display: block; }
+        #chat-panel { display: none; }
+        #messages { height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+        .message { margin: 5px 0; padding: 5px; border-radius: 5px; }
+        .system { color: #888; font-style: italic; }
+        .private { background: #e6f2ff; }
+        .broadcast { background: #f0f0f0; }
+        .my-message { background: #e6ffe6; text-align: right; }
+        input[type=text] { width: 70%; padding: 8px; }
+        button { padding: 8px 16px; }
+    </style>
+</head>
+<body>
+    <div id="login-panel">
+        <h1>SmallChat</h1>
+        <input type="text" id="username" placeholder="Enter username">
+        <button onclick="login()">Login</button>
+    </div>
+    
+    <div id="chat-panel">
+        <h2>Chat Room</h2>
+        <div id="messages"></div>
+        <input type="text" id="message-input" placeholder="Enter message...">
+        <button onclick="sendMessage()">Send</button>
+        <button onclick="logout()">Logout</button>
+    </div>
+    <script>
+        var ws;
+        var username = "";
+        function login() {
+            username = document.getElementById("username").value.trim();
+            if (!username) return;
+            ws = new WebSocket("ws://" + window.location.host + "/ws");
+            ws.onopen = function() {
+                ws.send("/login " + username);
+                document.getElementById("login-panel").style.display = "none";
+                document.getElementById("chat-panel").style.display = "block";
+                document.getElementById("message-input").focus();
+            };
+            ws.onmessage = function(event) {
+                addMessage(event.data);
+            };
+            ws.onclose = function() {
+                addMessage("[SYS] Disconnected");
+                document.getElementById("chat-panel").style.display = "none";
+                document.getElementById("login-panel").style.display = "block";
+            };
+        }
+        function logout() {
+            if (ws) {
+                ws.send("/quit");
+                ws.close();
+            }
+        }
+        function sendMessage() {
+            var input = document.getElementById("message-input");
+            var message = input.value.trim();
+            if (message && ws) {
+                ws.send(message);
+                addMessage("Me: " + message, "my-message");
+                input.value = "";
+            }
+        }
+        function addMessage(text, className) {
+            if (!className) className = "broadcast";
+            var div = document.createElement("div");
+            div.className = "message " + className;
+            if (text.indexOf("[SYS]") == 0) {
+                div.className = "message system";
+            } else if (text.indexOf("->") != -1) {
+                div.className = "message private";
+            }
+            div.textContent = text;
+            var messagesDiv = document.getElementById("messages");
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        document.getElementById("message-input").addEventListener("keypress", function(e) {
+            if (e.keyCode == 13) sendMessage();
+        });
+        document.getElementById("username").addEventListener("keypress", function(e) {
+            if (e.keyCode == 13) login();
+        });
+    </script>
+</body>
+</html>

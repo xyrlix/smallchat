@@ -1,13 +1,19 @@
 #ifndef SMALLCHAT_CLIENT_H
 #define SMALLCHAT_CLIENT_H
 
+#include "common.h"
 #include <string>
 #include <functional>
 #include <thread>
 #include <atomic>
 #include <queue>
 #include <mutex>
-#include "server.h"
+#include <sys/select.h>
+
+#ifdef OPENSSL_FOUND
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#endif
 
 namespace smallchat {
 
@@ -16,26 +22,6 @@ namespace smallchat {
  */
 class ChatClient {
 public:
-    /**
-     * @brief 消息回调函数类型
-     */
-    using MessageCallback = std::function<void(const ChatMessage&)>;
-    
-    /**
-     * @brief 系统消息回调
-     */
-    using SystemMessageCallback = std::function<void(const std::string&)>;
-    
-    /**
-     * @brief 用户列表回调
-     */
-    using UserListCallback = std::function<void(const std::vector<std::string>&)>;
-    
-    /**
-     * @brief 错误回调
-     */
-    using ErrorCallback = std::function<void(const std::string&)>;
-    
     ChatClient();
     ~ChatClient();
     
@@ -100,6 +86,11 @@ public:
     void setErrorCallback(ErrorCallback callback);
     
     /**
+     * @brief 设置成功消息回调
+     */
+    void setSuccessCallback(SystemMessageCallback callback);
+    
+    /**
      * @brief 启动消息接收线程
      */
     void start();
@@ -109,7 +100,27 @@ public:
      */
     void stop();
     
+    /**
+     * @brief 启用SSL/TLS
+     */
+    void enableSSL(bool enable = true);
+    
+    /**
+     * @brief 检查是否启用了SSL/TLS
+     */
+    bool isSSLEnabled() const;
+    
 private:
+    /**
+     * @brief 初始化SSL
+     */
+    bool initSSL();
+    
+    /**
+     * @brief 清理SSL
+     */
+    void cleanupSSL();
+    
     /**
      * @brief 接收消息线程
      */
@@ -142,9 +153,17 @@ private:
     SystemMessageCallback system_callback_;
     UserListCallback userlist_callback_;
     ErrorCallback error_callback_;
+    SystemMessageCallback success_callback_;
     
     std::string receive_buffer_;
     std::mutex buffer_mutex_;
+    
+    // SSL相关
+#ifdef OPENSSL_FOUND
+    bool ssl_enabled_;
+    SSL_CTX* ssl_ctx_;
+    SSL* ssl_;
+#endif
 };
 
 } // namespace smallchat
