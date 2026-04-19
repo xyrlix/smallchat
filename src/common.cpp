@@ -114,30 +114,32 @@ std::string base64Decode(const std::string& input) {
     return result;
 }
 
-// 编码消息
+// 编码消息 - 对内容进行Base64编码以防止特殊字符干扰
 std::string ChatProtocol::encode(const ChatMessage& message) {
     std::ostringstream oss;
-    oss << "MSG|" << message.sender << "|" << message.receiver << "|" 
-        << static_cast<int>(message.type) << "|" << message.content << "|" << message.message_id << "\n";
+    // sender和receiver使用原始值，content进行Base64编码
+    oss << "MSG|" << message.sender << "|" << message.receiver << "|"
+        << static_cast<int>(message.type) << "|"
+        << base64Encode(message.content) << "|" << message.message_id << "\n";
     return oss.str();
 }
 
-// 解码消息
+// 解码消息 - 对content进行Base64解码
 bool ChatProtocol::decode(const std::string& data, ChatMessage& message) {
     size_t pos = 0;
-    
+
     // 跳过MSG前缀
     if (data.substr(0, 3) != "MSG") {
         return false;
     }
     pos += 3;
-    
+
     // 跳过FIELD_SEPARATOR
     if (pos < data.size() && data[pos] != FIELD_SEPARATOR[0]) {
         return false;
     }
     pos++;
-    
+
     // 解析sender
     size_t end = data.find(FIELD_SEPARATOR, pos);
     if (end == std::string::npos) {
@@ -145,7 +147,7 @@ bool ChatProtocol::decode(const std::string& data, ChatMessage& message) {
     }
     message.sender = data.substr(pos, end - pos);
     pos = end + 1;
-    
+
     // 解析receiver
     end = data.find(FIELD_SEPARATOR, pos);
     if (end == std::string::npos) {
@@ -153,7 +155,7 @@ bool ChatProtocol::decode(const std::string& data, ChatMessage& message) {
     }
     message.receiver = data.substr(pos, end - pos);
     pos = end + 1;
-    
+
     // 解析type
     end = data.find(FIELD_SEPARATOR, pos);
     if (end == std::string::npos) {
@@ -167,21 +169,27 @@ bool ChatProtocol::decode(const std::string& data, ChatMessage& message) {
         return false;
     }
     pos = end + 1;
-    
-    // 解析content
+
+    // 解析content（Base64编码过的内容）
     end = data.find(FIELD_SEPARATOR, pos);
     if (end == std::string::npos) {
         return false;
     }
-    message.content = data.substr(pos, end - pos);
+    {
+        std::string encoded_content = data.substr(pos, end - pos);
+        message.content = base64Decode(encoded_content);
+    }
     pos = end + 1;
-    
-    // 解析message_id（读取到字符串末尾）
+
+    // 解析message_id（读取到字符串末尾，去掉末尾的换行符）
     message.message_id = data.substr(pos);
-    
+    if (!message.message_id.empty() && message.message_id.back() == '\n') {
+        message.message_id.pop_back();
+    }
+
     // 设置时间戳
     message.timestamp = std::chrono::system_clock::now();
-    
+
     return true;
 }
 

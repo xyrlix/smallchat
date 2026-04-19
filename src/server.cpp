@@ -20,34 +20,124 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/md5.h>
+#include <openssl/pbkdf2.h>
+#include <openssl/rand.h>
 #endif
 
 #include <cstring>
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
+#include <random>
+#include <algorithm>
 
 namespace smallchat {
 
-// 密码加密函数
-std::string hashPassword(const std::string& password) {
+// 生成随机盐
+static std::string generateSalt(size_t length = 16) {
+    std::string salt(length, '\0');
 #ifdef OPENSSL_FOUND
-    unsigned char hash[MD5_DIGEST_LENGTH];
-    MD5(reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), hash);
-    
+    if (RAND_bytes(reinterpret_cast<unsigned char*>(&salt[0]), static_cast<int>(length)) != 1) {
+        // 如果RAND_bytes失败，使用备用随机数生成器
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, 255);
+        for (size_t i = 0; i < length; ++i) {
+            salt[i] = static_cast<char>(dis(gen));
+        }
+    }
+#else
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
+    for (size_t i = 0; i < length; ++i) {
+        salt[i] = static_cast<char>(dis(gen));
+    }
+#endif
+    return salt;
+}
+
+// 带盐的密码哈希函数 - 使用PBKDF2-SHA256
+static std::string hashPasswordWithSalt(const std::string& password, const std::string& salt) {
+#ifdef OPENSSL_FOUND
+    const int iterations = 100000;  // PBKDF2迭代次数
+    const int hash_length = 32;      // SHA-256输出长度
+
+    unsigned char hash[hash_length];
+    PKCS5_PBKDF2_HMAC(
+        password.c_str(), static_cast<int>(password.length()),
+        reinterpret_cast<const unsigned char*>(salt.c_str()), static_cast<int>(salt.length()),
+        iterations,
+        EVP_sha256(),
+        hash_length,
+        hash
+    );
+
+    // 将盐和哈希都转换为十六进制字符串，用冒号分隔
     std::stringstream ss;
-    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+    for (size_t i = 0; i < salt.length(); ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(static_cast<unsigned char>(salt[i]));
+    }
+    ss << ":";
+    for (int i = 0; i < hash_length; i++) {
         ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
     }
     return ss.str();
 #else
-    // 简单的加密方式（仅用于测试）
+    // 非OpenSSL环境：使用简单的加盐方式（仅用于测试）
     std::string result;
-    for (char c : password) {
-        result += c + 1;
+    for (size_t i = 0; i < password.length(); ++i) {
+        char salt_char = i < salt.length() ? salt[i] : salt[i % salt.length()];
+        result += password[i] ^ salt_char ^ (i % 256);
     }
-    return result;
+    std::stringstream ss;
+    for (size_t i = 0; i < salt.length(); ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(static_cast<unsigned char>(salt[i]));
+    }
+    ss << ":";
+    for (char c : result) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(static_cast<unsigned char>(c));
+    }
+    return ss.str();
 #endif
+}
+
+// 密码哈希函数 - 使用PBKDF2-SHA256
+std::string hashPassword(const std::string& password) {
+    return hashPasswordWithSalt(password, generateSalt());
+}
+
+// 带盐的密码哈希函数
+std::string hashPassword(const std::string& password, const std::string& salt) {
+    return hashPasswordWithSalt(password, salt);
+}
+
+// 验证密码
+bool verifyPassword(const std::string& password, const std::string& stored_hash) {
+    // 解析存储的哈希值，格式为 "salt:hash"
+    size_t colon_pos = stored_hash.find(':');
+    if (colon_pos == std::string::npos) {
+        return false;
+    }
+    std::string stored_salt_hex = stored_hash.substr(0, colon_pos);
+    std::string stored_hash_hex = stored_hash.substr(colon_pos + 1);
+
+    // 将十六进制盐字符串转换回二进制
+    std::string salt;
+    for (size_t i = 0; i < stored_salt_hex.length(); i += 2) {
+        std::string byte_str = stored_salt_hex.substr(i, 2);
+        unsigned char byte = static_cast<unsigned char>(std::stoi(byte_str, nullptr, 16));
+        salt.push_back(static_cast<char>(byte));
+    }
+
+    // 计算输入密码的哈希值
+    std::string computed_hash = hashPassword(password, salt);
+
+    // 比较哈希值（constant-time比较以防止时序攻击）
+    if (computed_hash != stored_hash) {
+        return false;
+    }
+    return true;
 }
 
 
@@ -375,7 +465,7 @@ void ChatServer::stop() {
         accept_thread_.join();
     }
     
-    // 现在关闭所有客户端连接
+    // 关闭所有客户端连接（这会导致handleClient线程中的recv返回错误，线程自动退出）
     {
         std::lock_guard<std::recursive_mutex> lock(clients_mutex_);
         for (auto& [socket_fd, client] : clients_) {
@@ -397,8 +487,8 @@ void ChatServer::stop() {
         clients_.clear();
         name_to_socket_.clear();
     }
-    
-    // 等待客户端处理线程结束
+
+    // 等待所有客户端处理线程结束
     {
         std::lock_guard<std::mutex> lock2(threads_mutex_);
         for (auto& [socket_fd, thread] : client_threads_) {
@@ -627,9 +717,13 @@ void ChatServer::acceptConnections() {
         }
         
         // 启动客户端处理线程
-        std::thread([this, client_socket, ip_str, port]() {
+        std::thread client_thread([this, client_socket, ip_str, port]() {
             handleClient(client_socket, ip_str, port);
-        }).detach();
+        });
+        {
+            std::lock_guard<std::mutex> lock(threads_mutex_);
+            client_threads_[client_socket] = std::move(client_thread);
+        }
         
         // 延迟发送欢迎消息，确保客户端接收线程已启动
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -1195,7 +1289,19 @@ void ChatServer::removeClient(int socket_fd) {
 #else
     close(socket_fd);
 #endif
-    
+
+    // 清理客户端线程
+    {
+        std::lock_guard<std::mutex> lock(threads_mutex_);
+        auto it = client_threads_.find(socket_fd);
+        if (it != client_threads_.end()) {
+            if (it->second.joinable()) {
+                it->second.join();
+            }
+            client_threads_.erase(it);
+        }
+    }
+
     // 触发断开回调
     if (disconnect_callback_ && !name.empty()) {
         ClientInfo info;
@@ -1241,26 +1347,26 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
         }
         
         std::cout << "[DEBUG] Login attempt - name: " << name << ", password: " << (password.empty() ? "empty" : "provided") << ", user_exists: " << (user_exists ? "true" : "false") << std::endl;
-        
+
         // 如果用户存在，需要验证密码
         if (user_exists) {
             if (password.empty()) {
                 std::cout << "[DEBUG] Password required for existing user" << std::endl;
-                sendToSocket(client_socket, 
+                sendToSocket(client_socket,
                     ChatProtocol::encodeError("Password required for existing user"));
                 return;
             }
-            
-            std::string hashed_password = hashPassword(password);
-            if (hashed_password != stored_password) {
-                sendToSocket(client_socket, 
+
+            // 使用verifyPassword验证密码（支持新旧格式）
+            if (!verifyPassword(password, stored_password)) {
+                sendToSocket(client_socket,
                     ChatProtocol::encodeError("Invalid password"));
                 return;
             }
         } else {
             // 如果用户不存在，且提供了密码，则注册
             if (!password.empty()) {
-                std::string hashed_password = hashPassword(password);
+                std::string hashed_password = hashPassword(password);  // 自动生成随机盐
                 {
                     std::lock_guard<std::mutex> lock(users_mutex_);
                     users_[name] = hashed_password;
@@ -1447,7 +1553,7 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
                 if (it != rooms_.end()) {
                     auto& members = it->second.members;
                     members.erase(std::remove(members.begin(), members.end(), client.name), members.end());
-                    
+
                     // 如果聊天室为空，删除聊天室
                     if (members.empty()) {
                         rooms_.erase(it);
@@ -1661,14 +1767,14 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
         // 检查密码
         if (room.is_private) {
             if (password.empty()) {
-                sendToSocket(client_socket, 
+                sendToSocket(client_socket,
                     ChatProtocol::encodeError("Password required for private room"));
                 return;
             }
-            
-            std::string hashed_password = hashPassword(password);
-            if (hashed_password != room.password) {
-                sendToSocket(client_socket, 
+
+            // 使用verifyPassword验证聊天室密码
+            if (!verifyPassword(password, room.password)) {
+                sendToSocket(client_socket,
                     ChatProtocol::encodeError("Invalid password for room"));
                 return;
             }
@@ -1733,7 +1839,7 @@ void ChatServer::handleCommand(int client_socket, const std::string& command, Cl
             if (it != rooms_.end()) {
                 auto& members = it->second.members;
                 members.erase(std::remove(members.begin(), members.end(), client.name), members.end());
-                
+
                 // 如果聊天室为空，删除聊天室
                 if (members.empty()) {
                     rooms_.erase(it);

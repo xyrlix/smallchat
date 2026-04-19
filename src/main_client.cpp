@@ -180,11 +180,13 @@ int main(int argc, char* argv[]) {
         } else if (input == "/info" || input == "/i") {
             g_client->sendMessage("/info");
         } else {
-            g_client->sendMessage(input);
-            
-            // 检查是否是登录成功
-            if ((input.substr(0, 7) == "/login " || input.substr(0, 3) == "/l ") && !g_logged_in) {
-                // 提取用户名
+            // 检查是否是登录或注册命令
+            if ((input.substr(0, 7) == "/login " || input.substr(0, 3) == "/l " ||
+                 input.substr(0, 10) == "/register " || input.substr(0, 3) == "/r ") && !g_logged_in) {
+                // 直接发送命令，让服务器处理登录/注册逻辑
+                g_client->sendMessage(input);
+                
+                // 提取用户名用于显示
                 size_t pos = input.find(' ');
                 if (pos != std::string::npos) {
                     std::string name = input.substr(pos + 1);
@@ -195,6 +197,8 @@ int main(int argc, char* argv[]) {
                     }
                     g_current_user = name;
                 }
+            } else {
+                g_client->sendMessage(input);
             }
         }
         

@@ -153,19 +153,12 @@ bool ChatClient::connect(const std::string& host, uint16_t port) {
 
 void ChatClient::disconnect() {
     if (!connected_) return;
-    
+
+    // 先停止接收线程
+    running_ = false;
     connected_ = false;
-    
-    // 先关闭socket，唤醒阻塞的recv
-#ifdef OPENSSL_FOUND
-    if (ssl_) {
-        SSL_shutdown(ssl_);
-        SSL_free(ssl_);
-        ssl_ = nullptr;
-    }
-#endif
-    
-    // 关闭socket
+
+    // 关闭socket以唤醒阻塞的recv
     if (socket_fd_ >= 0) {
 #ifdef _WIN32
         closesocket(socket_fd_);
@@ -175,16 +168,31 @@ void ChatClient::disconnect() {
         socket_fd_ = -1;
 #endif
     }
+
+    // 等待接收线程结束
+    stop();
+
+#ifdef OPENSSL_FOUND
+    // 清理SSL连接
+    if (ssl_) {
+        SSL_shutdown(ssl_);
+        SSL_free(ssl_);
+        ssl_ = nullptr;
+    }
+#endif
 }
 
 bool ChatClient::isConnected() const {
     return connected_;
 }
 
-bool ChatClient::login(const std::string& name) {
+bool ChatClient::login(const std::string& name, const std::string& password) {
     if (!connected_) return false;
     
     std::string cmd = "/login " + name;
+    if (!password.empty()) {
+        cmd += " " + password;
+    }
     return send(cmd);
 }
 

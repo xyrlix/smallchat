@@ -43,7 +43,7 @@ public:
     /**
      * @brief 登录
      */
-    bool login(const std::string& name);
+    bool login(const std::string& name, const std::string& password = "");
     
     /**
      * @brief 发送消息

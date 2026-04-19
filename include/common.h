@@ -121,6 +121,10 @@ typedef std::function<void(const std::string&)> SystemMessageCallback;
 typedef std::function<void(const std::vector<std::string>&)> UserListCallback;
 typedef std::function<void(const std::string&)> ErrorCallback;
 
+// Base64 编码/解码函数
+std::string base64Encode(const std::string& input);
+std::string base64Decode(const std::string& input);
+
 // 工具函数
 namespace utils {
     // 格式化时间戳
